@@ -68,6 +68,13 @@
   </div>
 
   <div class="panel">
+    <h2>Logements DARI construits par ville</h2>
+    <p class="panel-sub">Logements effectivement construits, par ville -- hors apprêtement de site, raccordement eau/électricité et contrats d'achèvement reprenant un projet déjà compté ailleurs.</p>
+    <div id="logementsVilleTotal"></div>
+    <div id="chartLogementsVille"></div>
+  </div>
+
+  <div class="panel">
     <h2>Carte des réalisations</h2>
     <div id="leafletMapHome" class="geo-map"></div>
     <div class="geo-note">Seules les interventions avec latitude/longitude renseignées apparaissent sur la carte (principalement les infrastructures).</div>
@@ -179,6 +186,26 @@ function renderCharts(){
   trendChart(document.getElementById("chartTrend"), monthly, "var(--accent)");
 }
 
+// Logements DARI (type "Construction des logements") uniquement -- nb_unites
+// y est volontairement laissé vide pour l'apprêtement de site, le
+// raccordement eau/électricité et un contrat d'achèvement qui reprend un
+// projet déjà compté par ailleurs, donc une simple somme ici ne double
+// jamais ces logements (voir la correction appliquée en base).
+function renderLogementsVille(){
+  const rows = RECORDS.filter(r=> r.programme==="DARI" && r.type_intervention==="Construction des logements" && r.nb_unites!=null);
+  const byVille = {};
+  rows.forEach(r=>{
+    const key = r.commune || r.moughataa || r.region || "—";
+    byVille[key] = (byVille[key]||0) + Number(r.nb_unites);
+  });
+  const data = Object.entries(byVille).map(([label,count])=>({label, color:"var(--cat1)", count})).sort((a,b)=>b.count-a.count);
+  const total = data.reduce((a,d)=>a+d.count,0);
+  document.getElementById("logementsVilleTotal").innerHTML = total
+    ? `<p style="margin:0 0 14px"><strong style="font-size:22px">${fmtNum(total)}</strong> <span style="color:var(--text-2);font-size:13px">logements construits au total, ${data.length} ville(s)</span></p>`
+    : "";
+  barChart(document.getElementById("chartLogementsVille"), data);
+}
+
 function renderWatchlist(){
   const el = document.getElementById("watchlist");
   const suspended = RECORDS.filter(r=> r.statut==="Suspendu");
@@ -228,6 +255,7 @@ renderAuthWidget(document.getElementById("authWidget"));
 renderBanner(document.getElementById("banner"));
 renderStats();
 renderCharts();
+renderLogementsVille();
 renderWatchlist();
 renderCoverage();
 renderDataQuality(document.getElementById("dataQualityPanel"), RECORDS);

@@ -57,6 +57,16 @@ create table if not exists public.interventions (
   nb_mpe_finances numeric,
   -- Albarka -- Appui aux coopératives
   nb_cooperatives_appuyees numeric,
+  -- Albarka -- Équipement communautaire (checklist case à cocher + nombre,
+  -- une colonne par nature d'équipement)
+  nb_tricycles numeric,
+  nb_motos numeric,
+  nb_moulins numeric,
+  nb_congelateurs numeric,
+  nb_citernes numeric,
+  nb_motopompes numeric,
+  nb_toktok numeric,
+  nb_camions numeric,
   -- Distribution (générique, réutilisé par Cheyla)
   nature_distribution text,
   -- Distribution Temwine (Opération Ramadan / Opération spéciale / SAVS)
@@ -178,41 +188,104 @@ create trigger trg_log_intervention_delete
 --   update auth.users set raw_app_meta_data = raw_app_meta_data ||
 --     '{"full_name":"...", "role":"admin"}'::jsonb where email = '...';
 --   -- ou role':'coordinateur_programme','programme':'Tékavoul' pour un coordinateur
+--   -- ou avec en plus 'categorie':'Projet Hydraulique' pour un "chef de
+--   -- projet" restreint à une seule catégorie d'un programme en cascade
+--   -- (voir public.type_categories et public.can_write_intervention ci-dessous)
 -- role = 'admin'                  -> lit/ajoute/modifie tous les programmes
 -- role = 'coordinateur_programme' -> ajoute/modifie uniquement son programme
+--   (et, si categorie renseignée, uniquement les types de cette catégorie)
 alter table public.interventions enable row level security;
 
 drop policy if exists "Lecture publique" on public.interventions;
 create policy "Lecture publique" on public.interventions
   for select using (true);
 
+-- Table de correspondance type_intervention -> catégorie, par programme.
+-- Sert uniquement à restreindre l'accès d'un compte "chef de projet"
+-- (app_metadata.categorie) à une seule catégorie d'un programme en mode
+-- cascade. À tenir à jour manuellement si PROGRAM_FORM_SCHEMA (common.js)
+-- change pour Cheyla, ou à étendre si le même mécanisme est créé pour
+-- DARI/Albarka plus tard.
+create table if not exists public.type_categories (
+  programme text not null,
+  type_intervention text not null,
+  categorie text not null,
+  primary key (programme, type_intervention)
+);
+alter table public.type_categories enable row level security;
+drop policy if exists "Lecture publique type_categories" on public.type_categories;
+create policy "Lecture publique type_categories" on public.type_categories
+  for select using (true);
+
+insert into public.type_categories (programme, type_intervention, categorie) values
+  ('Cheyla', 'Construction d''écoles, collèges, lycées et salles de classe', 'Projet Éducation et Formation'),
+  ('Cheyla', 'Réhabilitation et extension d''infrastructures scolaires', 'Projet Éducation et Formation'),
+  ('Cheyla', 'Équipement des établissements scolaires et fourniture d''équipements pédagogiques', 'Projet Éducation et Formation'),
+  ('Cheyla', 'Construction de postes de santé', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Réhabilitation et achèvement d''infrastructures sanitaires', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Équipement des structures sanitaires et renforcement des plateaux techniques', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Affiliation et prise en charge de l''assurance maladie des ménages vulnérables', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Acquisition et mise à disposition d''intrants nutritionnels', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Appui à la prise en charge de la malnutrition', 'Projet Santé-Nutrition'),
+  ('Cheyla', 'Réalisation d''études géophysiques', 'Projet Hydraulique'),
+  ('Cheyla', 'Réalisation d''études hydrauliques', 'Projet Hydraulique'),
+  ('Cheyla', 'Réalisation de forages', 'Projet Hydraulique'),
+  ('Cheyla', 'Équipement des forages', 'Projet Hydraulique'),
+  ('Cheyla', 'Équipement et réhabilitation des puits', 'Projet Hydraulique'),
+  ('Cheyla', 'Construction de châteaux d''eau', 'Projet Hydraulique'),
+  ('Cheyla', 'Fourniture et installation de bâches protégées de stockage d''eau', 'Projet Hydraulique'),
+  ('Cheyla', 'Fourniture et installation de réservoirs de stockage d''eau en PEHD', 'Projet Hydraulique'),
+  ('Cheyla', 'Réalisation de réseaux d''adduction d''eau potable (AEP)', 'Projet Hydraulique'),
+  ('Cheyla', 'Construction et installation de bornes-fontaines', 'Projet Hydraulique'),
+  ('Cheyla', 'Réalisation de branchements particuliers aux réseaux d''eau potable', 'Projet Hydraulique'),
+  ('Cheyla', 'Fourniture et installation de groupes électrogènes', 'Projet Hydraulique'),
+  ('Cheyla', 'Réalisation des études de faisabilité d''électrification', 'Projet Energie'),
+  ('Cheyla', 'Construction et installation de mini-centrales hybrides solaires-thermiques', 'Projet Energie'),
+  ('Cheyla', 'Électrification des localités rurales', 'Projet Energie'),
+  ('Cheyla', 'Extension et raccordement aux réseaux électriques BT et MT', 'Projet Energie'),
+  ('Cheyla', 'Distribution de kits de gaz butane aux ménages vulnérables', 'Projet Energie')
+on conflict (programme, type_intervention) do update set categorie = excluded.categorie;
+
+-- Fonction centrale d'autorisation d'écriture, utilisée par les 3 policies
+-- insert/update/delete ci-dessous. role=admin garde un accès total ; un
+-- coordinateur_programme doit être sur son programme ; si en plus son compte
+-- porte un app_metadata.categorie (ex. "chef de projet" Cheyla), le
+-- type_intervention doit appartenir à cette catégorie précise.
+create or replace function public.can_write_intervention(p_programme text, p_type text)
+returns boolean
+language sql stable
+as $$
+  select
+    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
+    or (
+      p_programme = (auth.jwt() -> 'app_metadata' ->> 'programme')
+      and (
+        (auth.jwt() -> 'app_metadata' ->> 'categorie') is null
+        or exists (
+          select 1 from public.type_categories tc
+          where tc.programme = p_programme
+            and tc.type_intervention = p_type
+            and tc.categorie = (auth.jwt() -> 'app_metadata' ->> 'categorie')
+        )
+      )
+    );
+$$;
+
 drop policy if exists "Ajout par utilisateurs connectés" on public.interventions;
 create policy "Ajout par utilisateurs connectés" on public.interventions
   for insert to authenticated
-  with check (
-    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
-    or programme = (auth.jwt() -> 'app_metadata' ->> 'programme')
-  );
+  with check ( public.can_write_intervention(programme, type_intervention) );
 
 drop policy if exists "Modification par utilisateurs connectés" on public.interventions;
 create policy "Modification par utilisateurs connectés" on public.interventions
   for update to authenticated
-  using (
-    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
-    or programme = (auth.jwt() -> 'app_metadata' ->> 'programme')
-  )
-  with check (
-    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
-    or programme = (auth.jwt() -> 'app_metadata' ->> 'programme')
-  );
+  using ( public.can_write_intervention(programme, type_intervention) )
+  with check ( public.can_write_intervention(programme, type_intervention) );
 
 drop policy if exists "Suppression par utilisateurs connectés" on public.interventions;
 create policy "Suppression par utilisateurs connectés" on public.interventions
   for delete to authenticated
-  using (
-    coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin'
-    or programme = (auth.jwt() -> 'app_metadata' ->> 'programme')
-  );
+  using ( public.can_write_intervention(programme, type_intervention) );
 
 -- 5) Stockage des photos ------------------------------------------------------
 insert into storage.buckets (id, name, public)

@@ -145,6 +145,21 @@ const FORM_GROUPS_BY_TYPE = {
   "Appui aux coopératives": [
     {key:"nb_cooperatives_appuyees", label:"Nombre de coopératives appuyées", type:"number"},
   ],
+  // Albarka -- type "Équipement communautaire" : checklist (case à cocher +
+  // nombre) plutôt qu'un champ texte libre unique, une ligne par nature
+  // d'équipement réellement rencontrée dans l'inventaire des réalisations.
+  // type:"checknum" est rendu par saisie.html comme une case à cocher qui
+  // révèle un champ nombre associé (voir fieldHtml()).
+  "Équipement communautaire": [
+    {key:"nb_tricycles", label:"Tricycles", type:"checknum"},
+    {key:"nb_motos", label:"Motos", type:"checknum"},
+    {key:"nb_moulins", label:"Moulins à grains", type:"checknum"},
+    {key:"nb_congelateurs", label:"Congélateurs solaires", type:"checknum"},
+    {key:"nb_citernes", label:"Citernes", type:"checknum"},
+    {key:"nb_motopompes", label:"Motopompes", type:"checknum"},
+    {key:"nb_toktok", label:"TOK TOK", type:"checknum"},
+    {key:"nb_camions", label:"Camions", type:"checknum"},
+  ],
   // Groupe générique réutilisé par Cheyla (intrants nutritionnels, kits de
   // gaz, etc.) -- ne pas modifier pour un besoin propre à Temwine, voir
   // "Distribution Temwine" ci-dessous.
@@ -168,8 +183,8 @@ const FORM_GROUPS_BY_TYPE = {
     {key:"personnes_assurees_cnam", label:"Personnes assurées (nb.)", type:"number"},
     {key:"lieu_distribution_cnam", label:"Lieu de distribution", type:"text"},
   ],
-  // Équipement / logistique (ex. Camion — Albarka ; équipements et fournitures
-  // — Cheyla) : juste le décompte et sa destination, pas de fiche de chantier.
+  // Équipement / logistique (fournitures et équipements -- Cheyla) : juste le
+  // décompte et sa destination, pas de fiche de chantier.
   "Équipement": [
     {key:"equip_nombre", label:"Nombre", type:"number"},
     {key:"equip_affectation", label:"Affectation", type:"text"},
@@ -236,15 +251,11 @@ const PROGRAM_FORM_SCHEMA = {
       {label:"Siège commune", group:"Infrastructure"},
       {label:"Boutique (construction et approvisionnement)", group:"Infrastructure"},
     ]},
-    { categorie:"Équipements", types:[
-      {label:"Camion", group:"Équipement"},
-      {label:"Citerne", group:"Équipement"},
-    ]},
     { categorie:"Inclusion économique", types:[
       {label:"AGR/MPE", group:"AGR/MPE"},
       {label:"Appui aux coopératives", group:"Appui aux coopératives"},
       {label:"Distribution de bétail", group:"Distribution"},
-      {label:"Équipement communautaire (tricycles, moulins, congélateurs, citernes…)", group:"Distribution"},
+      {label:"Équipement communautaire (tricycles, moulins, congélateurs, citernes…)", group:"Équipement communautaire"},
       {label:"Fourniture de matériaux", group:"Distribution"},
       {label:"Projet communautaire", group:"AGR"},
     ]},
@@ -356,6 +367,16 @@ const DETAIL_GROUPS = [
     ["nb_mpe_finances","Nombre de MPE financés","num"]
   ]},
   {title:"Appui aux coopératives", fields:[["nb_cooperatives_appuyees","Nombre de coopératives appuyées","num"]]},
+  {title:"Équipement communautaire", fields:[
+    ["nb_tricycles","Tricycles","num"],
+    ["nb_motos","Motos","num"],
+    ["nb_moulins","Moulins à grains","num"],
+    ["nb_congelateurs","Congélateurs solaires","num"],
+    ["nb_citernes","Citernes","num"],
+    ["nb_motopompes","Motopompes","num"],
+    ["nb_toktok","TOK TOK","num"],
+    ["nb_camions","Camions","num"]
+  ]},
   {title:"Distribution", fields:[["nature_distribution","Nature de la distribution"]]},
   {title:"Distribution Temwine", fields:[
     ["quantite_stock","Quantité en stock","num"],["quantite_distribuee","Quantité distribuée","num"]

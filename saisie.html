@@ -115,6 +115,10 @@ function renderLogin(errorMsg){
 // decide what they're allowed to enter.
 let CURRENT_ROLE = null;
 let CURRENT_PROGRAMME = null;
+// Restriction optionnelle à une seule catégorie d'un programme en cascade
+// (ex. "chef de projet" Cheyla -- Projet Hydraulique, Énergie...). Appliquée
+// aussi côté base via public.can_write_intervention (voir schema.sql).
+let CURRENT_CATEGORIE = null;
 
 async function showForm(){
   const { data: { user } } = await supabaseClient.auth.getUser();
@@ -124,9 +128,10 @@ async function showForm(){
   const meta = user.app_metadata || {};
   CURRENT_ROLE = meta.role || null;
   CURRENT_PROGRAMME = meta.programme || null;
+  CURRENT_CATEGORIE = meta.categorie || null;
   const roleLabel = CURRENT_ROLE === "admin"
     ? "accès à tous les programmes"
-    : (CURRENT_PROGRAMME ? "coordinateur · " + CURRENT_PROGRAMME : "");
+    : (CURRENT_PROGRAMME ? "coordinateur · " + CURRENT_PROGRAMME + (CURRENT_CATEGORIE? " · "+CURRENT_CATEGORIE:"") : "");
   document.getElementById("whoAmI").textContent =
     "Connecté : " + (meta.full_name || user.email) + (roleLabel ? " (" + roleLabel + ")" : "");
   document.getElementById("pwdPanel").style.display = "none";
@@ -170,6 +175,15 @@ document.getElementById("changePwdBtn").addEventListener("click", ()=>{
 });
 
 function fieldHtml(f){
+  // "checknum" (case à cocher qui révèle un champ nombre) : rendu à part,
+  // sans le <label> générique au-dessus -- le libellé est porté par la case
+  // elle-même. Utilisé par la checklist "Équipement communautaire" (Albarka).
+  if(f.type==="checknum"){
+    return `<div class="field full checknum-field">
+      <label class="checknum-chk"><input type="checkbox" class="checknum-toggle"> ${esc(f.label)}</label>
+      <input type="number" name="${f.key}" class="checknum-num" placeholder="Nombre" min="0" step="1" disabled>
+    </div>`;
+  }
   const req = f.required ? "field-required" : "";
   const full = (f.type==="textarea") ? "full" : "";
   let input;
@@ -258,6 +272,15 @@ function buildForm(){
     specificWrap.innerHTML = fields.length
       ? `<div class="form-section-title">${esc(typeVal)}</div>` + fields.map(fieldHtml).join("")
       : "";
+    // Case cochée -> active (et vide le cas échéant) son champ nombre associé.
+    specificWrap.querySelectorAll(".checknum-field").forEach(row=>{
+      const chk = row.querySelector(".checknum-toggle");
+      const num = row.querySelector(".checknum-num");
+      chk.addEventListener("change", ()=>{
+        num.disabled = !chk.checked;
+        if(chk.checked) num.focus(); else num.value = "";
+      });
+    });
   }
   // Rebuilds the "Type d'intervention" control(s) for whichever programme is
   // selected: a flat list (Tékavoul, Temwine), a two-step Catégorie -> Type
@@ -321,6 +344,19 @@ function buildForm(){
         const g = schema.groups.find(gr=> gr.types.some(t=> t.label === presetType));
         if(g){ catSel.value = g.categorie; fillTypes(g.categorie); typeSel.value = presetType; }
       }
+      // Un compte restreint à une seule catégorie (ex. "chef de projet"
+      // Cheyla) ne doit voir/choisir que les types de cette catégorie --
+      // imposée et non modifiable, comme le programme pour un coordinateur.
+      if(CURRENT_CATEGORIE && schema.groups.some(g=> g.categorie === CURRENT_CATEGORIE)){
+        catSel.innerHTML = `<option value="${esc(CURRENT_CATEGORIE)}">${esc(CURRENT_CATEGORIE)}</option>`;
+        catSel.value = CURRENT_CATEGORIE;
+        catSel.disabled = true;
+        fillTypes(CURRENT_CATEGORIE);
+        const catNote = document.createElement("p");
+        catNote.style.cssText = "grid-column:1/-1;margin:-8px 0 0;font-size:12px;color:var(--text-2)";
+        catNote.textContent = "Votre compte ne peut saisir que des interventions de la catégorie " + CURRENT_CATEGORIE + ".";
+        catSel.closest(".field").insertAdjacentElement("afterend", catNote);
+      }
     }
     renderSpecific();
   }
@@ -352,7 +388,19 @@ function buildForm(){
     Object.keys(values).forEach(key=>{
       if(key === "programme" || key === "type_intervention") return; // handled separately below
       const field = form.querySelector(`[name="${key}"]`);
-      if(field && !field.disabled) field.value = values[key];
+      if(!field) return;
+      // Un champ "checknum" reste désactivé tant que sa case n'est pas cochée
+      // -- la réactiver ici avant de réinjecter la valeur du brouillon, sinon
+      // le FormData l'ignorerait silencieusement au prochain envoi.
+      if(field.classList.contains("checknum-num")){
+        const row = field.closest(".checknum-field");
+        const chk = row && row.querySelector(".checknum-toggle");
+        if(chk) chk.checked = true;
+        field.disabled = false;
+        field.value = values[key];
+        return;
+      }
+      if(!field.disabled) field.value = values[key];
     });
   }
   const draft = loadDraft();
@@ -414,7 +462,7 @@ function buildForm(){
       [...FORM_COMMON_NO_TYPE, {key:"type_intervention"}, ...typeGroupFields(currentProgramme(), typeVal)].forEach(f=>{
         const raw = fd.get(f.key);
         if(raw===null || raw==="") return;
-        record[f.key] = (f.type==="number") ? Number(raw) : raw;
+        record[f.key] = (f.type==="number" || f.type==="checknum") ? Number(raw) : raw;
       });
       if(!record.intitule || !record.programme || !record.type_intervention || !record.statut){
         throw new Error("Merci de renseigner au moins l'intitulé, le programme, la catégorie/le type et le statut.");
