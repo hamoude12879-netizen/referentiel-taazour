@@ -82,13 +82,17 @@ const FORM_COMMON = [
   {key:"notes", label:"Notes", type:"textarea"},
 ];
 const FORM_GROUPS_BY_TYPE = {
+  // Champ générique de quantité -- logements construits, salles de classe,
+  // forages, châteaux d'eau, etc. selon le type d'intervention précis. Un seul
+  // champ plutôt qu'un champ par nature d'ouvrage, pour rester valable quel
+  // que soit le type ajouté plus tard dans PROGRAM_FORM_SCHEMA.
   "Infrastructure": [
-    {key:"type_infra", label:"Type d'infrastructure", type:"select", options:TYPES_INFRA},
-    {key:"type_infra_autre", label:"Précisez (si « Autre »)", type:"text"},
+    {key:"nb_unites", label:"Nombre d'unités réalisées", type:"number"},
     {key:"lat", label:"Latitude", type:"number", step:"any"},
     {key:"lng", label:"Longitude", type:"number", step:"any"},
     {key:"marche_numero", label:"N° de marché", type:"text"},
-    {key:"bureau_controle", label:"Bureau de contrôle", type:"text"},
+    {key:"bureau_suivi", label:"Bureau de suivi", type:"text"},
+    {key:"montant_contrat_bureau_suivi", label:"Montant du contrat du bureau de suivi (MRU)", type:"number"},
     {key:"maitre_ouvrage", label:"Maître d'ouvrage", type:"text"},
     {key:"date_reception_provisoire", label:"Réception provisoire", type:"date"},
     {key:"date_reception_definitive", label:"Réception définitive", type:"date"},
@@ -99,14 +103,34 @@ const FORM_GROUPS_BY_TYPE = {
   ],
   "Boutiques Temwine": [
     {key:"nb_boutiques", label:"Nombre de boutiques", type:"number"},
-    {key:"produits_subventionnes", label:"Produits subventionnés", type:"text"},
-    {key:"taux_reduction", label:"Taux de réduction moyen (%)", type:"number"},
+    {key:"nb_boutiques_approvisionnees", label:"Nombre de boutiques approvisionnées", type:"number"},
+    {key:"quantite_approvisionnee_tonnes", label:"Quantité approvisionnée (tonnes)", type:"number"},
+  ],
+  // Spécifique au type "Cartes Temwine" -- distinct de "Boutiques Temwine"
+  // ci-dessus depuis que les deux types ont leurs propres compteurs.
+  "Cartes Temwine": [
+    {key:"nb_boutiques_homologuees", label:"Nombre de boutiques homologuées", type:"number"},
+    {key:"nb_cartes_distribuees", label:"Nombre de cartes distribuées", type:"number"},
+    {key:"montant_transactions_menages", label:"Montant utilisé par les ménages sur les transactions (MRU)", type:"number"},
+    {key:"quantite_vendue", label:"Quantité vendue", type:"number"},
   ],
   "AGR": [
     {key:"secteur_agr", label:"Secteur d'activité (AGR)", type:"text"},
   ],
+  // Groupe générique réutilisé par Cheyla (intrants nutritionnels, kits de
+  // gaz, etc.) -- ne pas modifier pour un besoin propre à Temwine, voir
+  // "Distribution Temwine" ci-dessous.
   "Distribution": [
     {key:"nature_distribution", label:"Nature de la distribution", type:"text"},
+  ],
+  // Temwine -- Opération Ramadan / Opération spéciale.
+  "Distribution Temwine": [
+    {key:"quantite_distribuee", label:"Quantité distribuée", type:"number"},
+  ],
+  // Temwine -- SAVS (Stocks Alimentaires Villageois de Sécurité).
+  "SAVS": [
+    {key:"quantite_stock", label:"Quantité en stock", type:"number"},
+    {key:"quantite_distribuee", label:"Quantité distribuée", type:"number"},
   ],
   "Ciblage / registre social": [
     {key:"methode_ciblage", label:"Méthode de ciblage / source", type:"text"},
@@ -126,7 +150,6 @@ const FORM_GROUPS_BY_TYPE = {
   // propres compteurs (le coût et la durée utilisent les champs communs
   // montant_engage / date_demarrage / date_fin, déjà dans FORM_COMMON).
   "Registre": [
-    {key:"registre_niveau", label:"Niveau", type:"select", options:["National","Wilaya","Ville","Commune"]},
     {key:"registre_menages_recenses", label:"Nombre de ménages recensés", type:"number"},
     {key:"registre_menages_registre", label:"Nombre de ménages dans le registre (cumulé)", type:"number"},
     {key:"registre_reclamations", label:"Nombre de réclamations", type:"number"},
@@ -165,10 +188,10 @@ const PROGRAM_FORM_SCHEMA = {
   ]},
   "Temwine": { mode:"flat", types:[
     {label:"Boutiques Temwine", group:"Boutiques Temwine"},
-    {label:"Cartes Temwine", group:"Boutiques Temwine"},
-    {label:"Opération Ramadan", group:"Distribution"},
-    {label:"Opération spéciale", group:"Distribution"},
-    {label:"SAVS (Stocks Alimentaires Villageois de Sécurité)", group:"Distribution"},
+    {label:"Cartes Temwine", group:"Cartes Temwine"},
+    {label:"Opération Ramadan", group:"Distribution Temwine"},
+    {label:"Opération spéciale", group:"Distribution Temwine"},
+    {label:"SAVS (Stocks Alimentaires Villageois de Sécurité)", group:"SAVS"},
   ]},
   "Albarka": { mode:"cascade", groups: [
     { categorie:"Infrastructures", types:[
@@ -268,9 +291,10 @@ const DETAIL_GROUPS = [
     ["avancement_pct","Avancement","pct"]
   ]},
   {title:"Infrastructure", fields:[
-    ["type_infra","Type d'infrastructure"],["type_infra_autre","Précision"],
+    ["nb_unites","Nombre d'unités réalisées","num"],
     ["lat","Latitude"],["lng","Longitude"],
-    ["marche_numero","N° de marché"],["bureau_controle","Bureau de contrôle"],
+    ["marche_numero","N° de marché"],["bureau_suivi","Bureau de suivi"],
+    ["montant_contrat_bureau_suivi","Montant du contrat du bureau de suivi","mru"],
     ["maitre_ouvrage","Maître d'ouvrage"],
     ["date_reception_provisoire","Réception provisoire","date"],
     ["date_reception_definitive","Réception définitive","date"]
@@ -279,11 +303,21 @@ const DETAIL_GROUPS = [
     ["montant_par_transfert","Montant par transfert","mru"],["nb_cycles","Cycles réalisés","num"]
   ]},
   {title:"Boutiques Temwine", fields:[
-    ["nb_boutiques","Nombre de boutiques","num"],["produits_subventionnes","Produits subventionnés"],
-    ["taux_reduction","Taux de réduction moyen","pct"]
+    ["nb_boutiques","Nombre de boutiques","num"],
+    ["nb_boutiques_approvisionnees","Boutiques approvisionnées","num"],
+    ["quantite_approvisionnee_tonnes","Quantité approvisionnée (tonnes)","num"]
+  ]},
+  {title:"Cartes Temwine", fields:[
+    ["nb_boutiques_homologuees","Boutiques homologuées","num"],
+    ["nb_cartes_distribuees","Cartes distribuées","num"],
+    ["montant_transactions_menages","Montant utilisé par les ménages","mru"],
+    ["quantite_vendue","Quantité vendue","num"]
   ]},
   {title:"AGR", fields:[["secteur_agr","Secteur d'activité"]]},
   {title:"Distribution", fields:[["nature_distribution","Nature de la distribution"]]},
+  {title:"Distribution Temwine", fields:[
+    ["quantite_stock","Quantité en stock","num"],["quantite_distribuee","Quantité distribuée","num"]
+  ]},
   {title:"Ciblage / registre social", fields:[["methode_ciblage","Méthode de ciblage / source"]]},
   {title:"Assurance maladie (CNAM)", fields:[
     ["menages_assures_cnam","Ménages assurés","num"],
@@ -294,7 +328,6 @@ const DETAIL_GROUPS = [
     ["equip_nombre","Nombre","num"],["equip_affectation","Affectation"]
   ]},
   {title:"Registre social", fields:[
-    ["registre_niveau","Niveau"],
     ["registre_menages_recenses","Ménages recensés","num"],
     ["registre_menages_registre","Ménages dans le registre (cumulé)","num"],
     ["registre_reclamations","Réclamations","num"]

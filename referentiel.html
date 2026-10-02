@@ -124,6 +124,10 @@ function renderStats(){
   const regions = new Set(RECORDS.map(r=>r.region).filter(Boolean)).size;
   const avancementVals = RECORDS.map(r=>Number(r.avancement_pct)).filter(v=>!isNaN(v));
   const avancementMoyen = avancementVals.length ? Math.round(avancementVals.reduce((a,v)=>a+v,0)/avancementVals.length) : null;
+  // Cumul toutes infrastructures confondues (logements, salles de classe,
+  // forages, châteaux d'eau, etc.) -- le champ "nb_unites" est générique,
+  // voir common.js / FORM_GROUPS_BY_TYPE.Infrastructure.
+  const unites = RECORDS.reduce((a,r)=> a + (Number(r.nb_unites)||0), 0);
   renderStatTiles(document.getElementById("stats"), [
     {label:"Interventions", value:fmtNum(total), sub:"tous programmes", icon:"list"},
     {label:"Bénéficiaires atteints", value: total? fmtNum(atteints):"—", sub:"cumul des interventions", icon:"users"},
@@ -131,6 +135,7 @@ function renderStats(){
     {label:"Montant décaissé", value: total? fmtNum(decaisse):"—", sub: montant? tauxDecaissement+"% de l'engagé":"MRU", icon:"coin"},
     {label:"Taux d'achèvement", value: total? pct+"%":"—", sub:fmtNum(done)+" achevées / clôturées", icon:"checkCircle"},
     {label:"Avancement moyen", value: avancementMoyen!=null? avancementMoyen+"%":"—", sub:"toutes interventions renseignées", icon:"checkCircle"},
+    {label:"Unités réalisées", value: unites? fmtNum(unites):"—", sub:"logements, salles, forages… cumul infrastructures", icon:"table"},
     {label:"Régions couvertes", value:fmtNum(regions), sub:"sur 15 wilayas", icon:"map"},
   ]);
 }

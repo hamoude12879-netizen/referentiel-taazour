@@ -23,13 +23,16 @@ create table if not exists public.interventions (
   date_demarrage date,
   date_fin date,
   notes text,
-  -- Infrastructure
-  type_infra text,
-  type_infra_autre text, -- précision libre quand type_infra = 'Autre'
+  -- Infrastructure -- nb_unites : quantité générique d'unités réalisées
+  -- (logements, salles de classe, forages, châteaux d'eau, etc. selon le
+  -- type d'intervention précis -- un seul champ plutôt qu'un champ par
+  -- nature d'ouvrage).
+  nb_unites numeric,
   lat numeric,
   lng numeric,
   marche_numero text,
-  bureau_controle text,
+  bureau_suivi text,
+  montant_contrat_bureau_suivi numeric,
   maitre_ouvrage text,
   date_reception_provisoire date,
   date_reception_definitive date,
@@ -38,12 +41,20 @@ create table if not exists public.interventions (
   nb_cycles numeric,
   -- Boutiques Temwine
   nb_boutiques numeric,
-  produits_subventionnes text,
-  taux_reduction numeric,
+  nb_boutiques_approvisionnees numeric,
+  quantite_approvisionnee_tonnes numeric,
+  -- Cartes Temwine
+  nb_boutiques_homologuees numeric,
+  nb_cartes_distribuees numeric,
+  montant_transactions_menages numeric,
+  quantite_vendue numeric,
   -- AGR
   secteur_agr text,
-  -- Distribution
+  -- Distribution (générique, réutilisé par Cheyla)
   nature_distribution text,
+  -- Distribution Temwine (Opération Ramadan / Opération spéciale / SAVS)
+  quantite_distribuee numeric,
+  quantite_stock numeric,
   -- Ciblage / registre social
   methode_ciblage text,
   -- Assurance maladie (CNAM)
@@ -55,7 +66,6 @@ create table if not exists public.interventions (
   equip_nombre numeric,
   equip_affectation text,
   -- Mise à jour du Registre social
-  registre_niveau text,
   registre_menages_recenses numeric,
   registre_menages_registre numeric,
   registre_reclamations numeric,
