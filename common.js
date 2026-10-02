@@ -155,6 +155,7 @@ const PROGRAM_FORM_SCHEMA = {
       {label:"Réhabilitation des internats et des centres de formation", group:"Infrastructure"},
       {label:"Construction des internats", group:"Infrastructure"},
       {label:"Construction des équipements de TAAZOUR (siège, bureaux des programmes)", group:"Infrastructure"},
+      {label:"Construction de centre de dialyse", group:"Infrastructure"},
     ]},
   ]},
   "Tékavoul": { mode:"flat", types:[
