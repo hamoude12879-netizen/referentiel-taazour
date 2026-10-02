@@ -28,6 +28,8 @@ create table if not exists public.interventions (
   -- type d'intervention précis -- un seul champ plutôt qu'un champ par
   -- nature d'ouvrage).
   nb_unites numeric,
+  -- Albarka -- type "Barrages" uniquement.
+  superficie_ha numeric,
   lat numeric,
   lng numeric,
   marche_numero text,
@@ -48,8 +50,13 @@ create table if not exists public.interventions (
   nb_cartes_distribuees numeric,
   montant_transactions_menages numeric,
   quantite_vendue numeric,
-  -- AGR
+  -- AGR (type "Projet communautaire" d'Albarka)
   secteur_agr text,
+  -- Albarka -- AGR/MPE (financement en lot d'AGR et de Micro-Projets Économiques)
+  nb_agr_financees numeric,
+  nb_mpe_finances numeric,
+  -- Albarka -- Appui aux coopératives
+  nb_cooperatives_appuyees numeric,
   -- Distribution (générique, réutilisé par Cheyla)
   nature_distribution text,
   -- Distribution Temwine (Opération Ramadan / Opération spéciale / SAVS)

@@ -97,6 +97,21 @@ const FORM_GROUPS_BY_TYPE = {
     {key:"date_reception_provisoire", label:"Réception provisoire", type:"date"},
     {key:"date_reception_definitive", label:"Réception définitive", type:"date"},
   ],
+  // Albarka -- type "Barrages" uniquement : mêmes champs que "Infrastructure"
+  // ci-dessus, plus la superficie (ha), propre aux barrages et sans objet
+  // pour les autres types d'infrastructure.
+  "Barrage": [
+    {key:"nb_unites", label:"Nombre d'unités réalisées", type:"number"},
+    {key:"superficie_ha", label:"Superficie (ha)", type:"number", step:"any"},
+    {key:"lat", label:"Latitude", type:"number", step:"any"},
+    {key:"lng", label:"Longitude", type:"number", step:"any"},
+    {key:"marche_numero", label:"N° de marché", type:"text"},
+    {key:"bureau_suivi", label:"Bureau de suivi", type:"text"},
+    {key:"montant_contrat_bureau_suivi", label:"Montant du contrat du bureau de suivi (MRU)", type:"number"},
+    {key:"maitre_ouvrage", label:"Maître d'ouvrage", type:"text"},
+    {key:"date_reception_provisoire", label:"Réception provisoire", type:"date"},
+    {key:"date_reception_definitive", label:"Réception définitive", type:"date"},
+  ],
   "Transfert monétaire": [
     {key:"montant_par_transfert", label:"Montant par transfert (MRU)", type:"number"},
     {key:"nb_cycles", label:"Nombre de cycles réalisés", type:"number"},
@@ -114,8 +129,21 @@ const FORM_GROUPS_BY_TYPE = {
     {key:"montant_transactions_menages", label:"Montant utilisé par les ménages sur les transactions (MRU)", type:"number"},
     {key:"quantite_vendue", label:"Quantité vendue", type:"number"},
   ],
+  // Groupe conservé pour "Projet communautaire" (Albarka) -- champ générique
+  // de description, distinct des compteurs AGR/MPE ci-dessous.
   "AGR": [
     {key:"secteur_agr", label:"Secteur d'activité (AGR)", type:"text"},
+  ],
+  // Albarka -- type "AGR/MPE" : financement d'Activités Génératrices de
+  // Revenus et de Micro-Projets Économiques, toujours annoncé en lot
+  // ("Financement de N AGR et de M MPE") dans l'inventaire des réalisations.
+  "AGR/MPE": [
+    {key:"nb_agr_financees", label:"Nombre d'AGR financées", type:"number"},
+    {key:"nb_mpe_finances", label:"Nombre de MPE financés", type:"number"},
+  ],
+  // Albarka -- type "Appui aux coopératives".
+  "Appui aux coopératives": [
+    {key:"nb_cooperatives_appuyees", label:"Nombre de coopératives appuyées", type:"number"},
   ],
   // Groupe générique réutilisé par Cheyla (intrants nutritionnels, kits de
   // gaz, etc.) -- ne pas modifier pour un besoin propre à Temwine, voir
@@ -180,6 +208,10 @@ const PROGRAM_FORM_SCHEMA = {
       {label:"Construction des équipements de TAAZOUR (siège, bureaux des programmes)", group:"Infrastructure"},
       {label:"Construction de centre de dialyse", group:"Infrastructure"},
     ]},
+    { categorie:"Accompagnement des logements", types:[
+      {label:"Raccordement eau/électricité des logements", group:"Infrastructure"},
+      {label:"Gardiennage des logements", group:"Infrastructure"},
+    ]},
   ]},
   "Tékavoul": { mode:"flat", types:[
     {label:"Cash transfert régulier", group:"Transfert monétaire"},
@@ -195,7 +227,7 @@ const PROGRAM_FORM_SCHEMA = {
   ]},
   "Albarka": { mode:"cascade", groups: [
     { categorie:"Infrastructures", types:[
-      {label:"Barrages", group:"Infrastructure"},
+      {label:"Barrages", group:"Barrage"},
       {label:"Complexe TAAZOUR", group:"Infrastructure"},
       {label:"Complexe religieux", group:"Infrastructure"},
       {label:"Mahdra", group:"Infrastructure"},
@@ -208,8 +240,12 @@ const PROGRAM_FORM_SCHEMA = {
       {label:"Camion", group:"Équipement"},
       {label:"Citerne", group:"Équipement"},
     ]},
-    { categorie:"Développement local", types:[
-      {label:"AGR", group:"AGR"},
+    { categorie:"Inclusion économique", types:[
+      {label:"AGR/MPE", group:"AGR/MPE"},
+      {label:"Appui aux coopératives", group:"Appui aux coopératives"},
+      {label:"Distribution de bétail", group:"Distribution"},
+      {label:"Équipement communautaire (tricycles, moulins, congélateurs, citernes…)", group:"Distribution"},
+      {label:"Fourniture de matériaux", group:"Distribution"},
       {label:"Projet communautaire", group:"AGR"},
     ]},
   ]},
@@ -292,6 +328,7 @@ const DETAIL_GROUPS = [
   ]},
   {title:"Infrastructure", fields:[
     ["nb_unites","Nombre d'unités réalisées","num"],
+    ["superficie_ha","Superficie (ha)","num"],
     ["lat","Latitude"],["lng","Longitude"],
     ["marche_numero","N° de marché"],["bureau_suivi","Bureau de suivi"],
     ["montant_contrat_bureau_suivi","Montant du contrat du bureau de suivi","mru"],
@@ -314,6 +351,11 @@ const DETAIL_GROUPS = [
     ["quantite_vendue","Quantité vendue","num"]
   ]},
   {title:"AGR", fields:[["secteur_agr","Secteur d'activité"]]},
+  {title:"AGR/MPE", fields:[
+    ["nb_agr_financees","Nombre d'AGR financées","num"],
+    ["nb_mpe_finances","Nombre de MPE financés","num"]
+  ]},
+  {title:"Appui aux coopératives", fields:[["nb_cooperatives_appuyees","Nombre de coopératives appuyées","num"]]},
   {title:"Distribution", fields:[["nature_distribution","Nature de la distribution"]]},
   {title:"Distribution Temwine", fields:[
     ["quantite_stock","Quantité en stock","num"],["quantite_distribuee","Quantité distribuée","num"]
