@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Référentiel TAAZOUR — Ajouter une intervention</title>
+<meta name="description" content="Formulaire de saisie en ligne pour les équipes TAAZOUR, réservé aux utilisateurs connectés.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" type="image/jpeg" href="assets/taazour-logo.jpg">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+
+<div class="gov-band"><span>République Islamique de Mauritanie</span><span><span class="sep">&middot;</span>Délégation Générale TAAZOUR &mdash; Honneur &middot; Fraternité &middot; Justice</span></div>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark"><img src="assets/taazour-logo.jpg" alt="Logo TAAZOUR"></div>
+      <div>
+        <h1>Référentiel TAAZOUR</h1>
+        <p>Ajouter une intervention</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+        <a href="index.html">Vue décideurs<span id="navUrgentBadge" class="nav-badge" hidden></span></a>
+        <a href="referentiel.html">Détail opérationnel</a>
+        <a href="saisie.html" class="on">Ajouter une intervention</a>
+      </nav>
+      <button class="icon-btn" id="themeToggle"></button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="configWarning"></div>
+  <div id="authPanel"></div>
+  <div id="formPanel" style="display:none">
+    <div class="panel">
+      <div class="who-bar">
+        <span id="whoAmI"></span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="changePwdBtn">Changer le mot de passe</button>
+          <button class="btn btn-ghost" id="logoutBtn">Se déconnecter</button>
+        </div>
+      </div>
+      <div id="pwdPanel" style="display:none"></div>
+      <div id="formMsg"></div>
+      <form id="interForm"></form>
+    </div>
+    <div class="panel">
+      <h2>Dernières interventions ajoutées</h2>
+      <div id="recentList"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="site">Référentiel TAAZOUR — formulaire réservé aux équipes des programmes.</footer>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+(function(){
+"use strict";
+
+initThemeToggle("themeToggle");
+window.addEventListener("scroll", ()=>{
+  document.querySelector(".topbar").classList.toggle("scrolled", window.scrollY > 8);
+}, {passive:true});
+
+const configWarning = document.getElementById("configWarning");
+if(!supabaseClient){
+  configWarning.innerHTML = `<div class="panel" style="border-color:var(--critical)">
+    <strong>Formulaire non configuré.</strong> Ce site n'est pas encore relié à la base de
+    données en ligne (Supabase). Tant que <code>config.js</code> n'est pas rempli, la saisie
+    directe n'est pas possible ici — utilisez le classeur Excel en attendant.
+  </div>`;
+}
+
+const authPanel = document.getElementById("authPanel");
+const formPanel = document.getElementById("formPanel");
+
+function renderLogin(errorMsg){
+  authPanel.innerHTML = `
+    <div class="panel auth-box">
+      <h2>Connexion</h2>
+      ${errorMsg? `<div class="form-msg err">${esc(errorMsg)}</div>` : ""}
+      <form id="loginForm">
+        <div class="field"><label>Adresse e-mail</label><input type="email" id="loginEmail" required></div>
+        <div class="field"><label>Mot de passe</label><input type="password" id="loginPassword" required></div>
+        <button class="btn" type="submit" style="width:100%;justify-content:center">Se connecter</button>
+      </form>
+      <p style="font-size:12px;color:var(--text-2);margin-top:14px">
+        Identifiants fournis par l'équipe DARI. Pas encore de compte ? Contactez le
+        coordinateur de votre programme.
+      </p>
+    </div>`;
+  document.getElementById("loginForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if(error){ renderLogin(error.message === "Invalid login credentials" ? "E-mail ou mot de passe incorrect." : error.message); return; }
+    // showForm() runs via the onAuthStateChange listener below once Supabase
+    // confirms the new session -- calling it here too would attach a second
+    // submit handler to the (unchanged) <form> node and double-submit.
+  });
+}
+
+// app_metadata is set by SQL/admin only — unlike user_metadata it cannot be
+// edited by the signed-in person themselves, so it's safe to use here to
+// decide what they're allowed to enter.
+let CURRENT_ROLE = null;
+let CURRENT_PROGRAMME = null;
+
+async function showForm(){
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  if(!user){ authPanel.style.display=""; formPanel.style.display="none"; renderLogin(); return; }
+  authPanel.style.display="none";
+  formPanel.style.display="";
+  const meta = user.app_metadata || {};
+  CURRENT_ROLE = meta.role || null;
+  CURRENT_PROGRAMME = meta.programme || null;
+  const roleLabel = CURRENT_ROLE === "admin"
+    ? "accès à tous les programmes"
+    : (CURRENT_PROGRAMME ? "coordinateur · " + CURRENT_PROGRAMME : "");
+  document.getElementById("whoAmI").textContent =
+    "Connecté : " + (meta.full_name || user.email) + (roleLabel ? " (" + roleLabel + ")" : "");
+  document.getElementById("pwdPanel").style.display = "none";
+  buildForm();
+  loadRecent();
+}
+
+document.getElementById("logoutBtn").addEventListener("click", async ()=>{
+  await supabaseClient.auth.signOut();
+  location.reload();
+});
+
+let pwdPanelOpen = false;
+function renderPwdPanel(){
+  const el = document.getElementById("pwdPanel");
+  el.innerHTML = `
+    <form id="pwdForm" style="max-width:380px;margin:4px 0 16px">
+      <div id="pwdMsg"></div>
+      <div class="field"><label>Nouveau mot de passe</label><input type="password" id="newPwd" minlength="6" required></div>
+      <div class="field"><label>Confirmer le nouveau mot de passe</label><input type="password" id="newPwd2" minlength="6" required></div>
+      <button class="btn" type="submit">Mettre à jour le mot de passe</button>
+    </form>`;
+  document.getElementById("pwdForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const msg = document.getElementById("pwdMsg");
+    const p1 = document.getElementById("newPwd").value;
+    const p2 = document.getElementById("newPwd2").value;
+    if(p1 !== p2){ msg.innerHTML = `<div class="form-msg err">Les deux mots de passe ne correspondent pas.</div>`; return; }
+    if(p1.length < 6){ msg.innerHTML = `<div class="form-msg err">Le mot de passe doit contenir au moins 6 caractères.</div>`; return; }
+    const { error } = await supabaseClient.auth.updateUser({ password: p1 });
+    if(error){ msg.innerHTML = `<div class="form-msg err">Erreur : ${esc(error.message)}</div>`; return; }
+    msg.innerHTML = `<div class="form-msg ok">Mot de passe mis à jour.</div>`;
+    e.target.reset();
+  });
+}
+document.getElementById("changePwdBtn").addEventListener("click", ()=>{
+  pwdPanelOpen = !pwdPanelOpen;
+  const el = document.getElementById("pwdPanel");
+  el.style.display = pwdPanelOpen ? "" : "none";
+  if(pwdPanelOpen) renderPwdPanel();
+});
+
+function fieldHtml(f){
+  const req = f.required ? "field-required" : "";
+  const full = (f.type==="textarea") ? "full" : "";
+  let input;
+  if(f.type==="select"){
+    input = `<select name="${f.key}" ${f.required?"required":""}>
+      <option value="">—</option>
+      ${f.options.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+    </select>`;
+  } else if(f.type==="textarea"){
+    input = `<textarea name="${f.key}"></textarea>`;
+  } else {
+    input = `<input type="${f.type}" name="${f.key}" ${f.step?`step="${f.step}"`:""} ${f.required?"required":""}>`;
+  }
+  return `<div class="field ${req} ${full}"><label>${esc(f.label)}</label>${input}</div>`;
+}
+
+// --- Brouillon hors-ligne : sauvegarde locale des champs texte/select pendant
+// la saisie (jamais les photos, trop volumineuses pour localStorage), pour ne
+// pas perdre un formulaire en cours en cas de coupure réseau ou de fermeture
+// accidentelle de l'onglet. Effacé automatiquement après un envoi réussi.
+const DRAFT_KEY = "taazour_saisie_draft_v1";
+function saveDraft(form){
+  try{
+    const fd = new FormData(form);
+    const values = {};
+    for(const [k,v] of fd.entries()) values[k] = v;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ values, savedAt: Date.now() }));
+  }catch(e){ /* stockage indisponible (navigation privée, quota…) -- tant pis */ }
+}
+function loadDraft(){
+  try{
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function clearDraft(){
+  try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+}
+
+// `type_intervention` n'est plus un champ générique commun : son contenu
+// dépend entièrement du programme sélectionné (mode "flat", "cascade" ou
+// "fixed" -- voir PROGRAM_FORM_SCHEMA dans common.js), donc il est construit
+// dynamiquement dans #typeFieldWrap plutôt que listé dans FORM_COMMON.
+const FORM_COMMON_NO_TYPE = FORM_COMMON.filter(f=> f.key !== "type_intervention");
+
+function buildForm(){
+  const form = document.getElementById("interForm");
+  form.innerHTML = `
+    <div class="form-grid">
+      <div class="form-section-title">Informations générales</div>
+      ${FORM_COMMON_NO_TYPE.map(f=> f.key==="programme" ? fieldHtml(f) : "").join("")}
+      <div id="typeFieldWrap"></div>
+      ${FORM_COMMON_NO_TYPE.map(f=> f.key==="programme" ? "" : fieldHtml(f)).join("")}
+      <div id="typeSpecificFields"></div>
+      <div class="form-section-title">Photos</div>
+      <div class="field full">
+        <label>Ajouter des photos (optionnel)</label>
+        <div class="photo-input-row">
+          <input type="file" id="photoInput" accept="image/*" multiple>
+          <div class="photo-preview-strip" id="photoPreview"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="justify-content:flex-start;margin-top:10px">
+      <button class="btn" type="submit" id="submitBtn">Ajouter l'intervention</button>
+    </div>
+  `;
+  let pendingFiles = [];
+
+  const typeFieldWrap = document.getElementById("typeFieldWrap");
+  const specificWrap = document.getElementById("typeSpecificFields");
+  const progSel = form.querySelector('[name="programme"]');
+
+  function currentProgramme(){ return progSel ? progSel.value : ""; }
+  function getTypeValue(){
+    const el = form.querySelector('[name="type_intervention"]:not(:disabled)');
+    return el ? el.value : "";
+  }
+  // Renders the fields specific to whichever type is currently selected
+  // (Infrastructure, Transfert monétaire, Équipement, Registre…) below the
+  // type selector -- unchanged in spirit from before, just looked up through
+  // the programme+type pair now rather than the type name alone.
+  function renderSpecific(){
+    const typeVal = getTypeValue();
+    const fields = typeGroupFields(currentProgramme(), typeVal);
+    specificWrap.innerHTML = fields.length
+      ? `<div class="form-section-title">${esc(typeVal)}</div>` + fields.map(fieldHtml).join("")
+      : "";
+  }
+  // Rebuilds the "Type d'intervention" control(s) for whichever programme is
+  // selected: a flat list (Tékavoul, Temwine), a two-step Catégorie -> Type
+  // cascade (DARI, Albarka, Cheyla), or a single fixed type with no choice
+  // (Registre social). `presetType` restores a value from a saved draft.
+  function renderTypeField(presetType){
+    const programme = currentProgramme();
+    const schema = PROGRAM_FORM_SCHEMA[programme];
+    if(!schema){
+      typeFieldWrap.innerHTML = `<div class="field field-required">
+        <label>Type d'intervention</label>
+        <select name="type_intervention" required disabled><option value="">— Choisissez d'abord un programme —</option></select>
+      </div>`;
+      renderSpecific();
+      return;
+    }
+    if(schema.mode === "flat"){
+      typeFieldWrap.innerHTML = `<div class="field field-required">
+        <label>Type d'intervention</label>
+        <select name="type_intervention" required>
+          <option value="">—</option>
+          ${schema.types.map(t=>`<option value="${esc(t.label)}">${esc(t.label)}</option>`).join("")}
+        </select>
+      </div>`;
+      const sel = typeFieldWrap.querySelector('[name="type_intervention"]');
+      if(presetType) sel.value = presetType;
+      sel.onchange = renderSpecific;
+    } else if(schema.mode === "fixed"){
+      typeFieldWrap.innerHTML = `<div class="field field-required">
+        <label>Type d'intervention</label>
+        <select disabled><option>${esc(schema.type.label)}</option></select>
+        <input type="hidden" name="type_intervention" value="${esc(schema.type.label)}">
+      </div>`;
+    } else if(schema.mode === "cascade"){
+      typeFieldWrap.innerHTML = `<div class="field field-required">
+          <label>Catégorie</label>
+          <select id="typeCategorieSelect" required>
+            <option value="">—</option>
+            ${schema.groups.map(g=>`<option value="${esc(g.categorie)}">${esc(g.categorie)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field field-required">
+          <label>Type d'intervention</label>
+          <select name="type_intervention" required disabled><option value="">— Choisissez d'abord une catégorie —</option></select>
+        </div>`;
+      const catSel = document.getElementById("typeCategorieSelect");
+      const typeSel = typeFieldWrap.querySelector('[name="type_intervention"]');
+      function fillTypes(categorieLabel){
+        const g = schema.groups.find(x=> x.categorie === categorieLabel);
+        if(!g){
+          typeSel.innerHTML = `<option value="">— Choisissez d'abord une catégorie —</option>`;
+          typeSel.disabled = true;
+          return;
+        }
+        typeSel.disabled = false;
+        typeSel.innerHTML = `<option value="">—</option>` + g.types.map(t=>`<option value="${esc(t.label)}">${esc(t.label)}</option>`).join("");
+      }
+      catSel.onchange = ()=>{ fillTypes(catSel.value); renderSpecific(); };
+      typeSel.onchange = renderSpecific;
+      if(presetType){
+        const g = schema.groups.find(gr=> gr.types.some(t=> t.label === presetType));
+        if(g){ catSel.value = g.categorie; fillTypes(g.categorie); typeSel.value = presetType; }
+      }
+    }
+    renderSpecific();
+  }
+
+  // Coordinators can only enter data for their own programme (enforced
+  // server-side too, via RLS) — lock the field so it's clear upfront rather
+  // than letting them fill a whole form and get rejected on submit.
+  if(CURRENT_ROLE === "coordinateur_programme" && CURRENT_PROGRAMME){
+    if(progSel){
+      progSel.innerHTML = `<option value="${esc(CURRENT_PROGRAMME)}">${esc(CURRENT_PROGRAMME)}</option>`;
+      progSel.value = CURRENT_PROGRAMME;
+      progSel.disabled = true;
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "programme";
+      hidden.value = CURRENT_PROGRAMME;
+      progSel.insertAdjacentElement("afterend", hidden);
+      const note = document.createElement("p");
+      note.style.cssText = "grid-column:1/-1;margin:-8px 0 0;font-size:12px;color:var(--text-2)";
+      note.textContent = "Votre compte ne peut saisir que des interventions du programme " + CURRENT_PROGRAMME + ".";
+      progSel.closest(".field").insertAdjacentElement("afterend", note);
+    }
+  } else if(progSel){
+    progSel.onchange = ()=> renderTypeField();
+  }
+  renderTypeField();
+
+  function applyDraftValues(values){
+    Object.keys(values).forEach(key=>{
+      if(key === "programme" || key === "type_intervention") return; // handled separately below
+      const field = form.querySelector(`[name="${key}"]`);
+      if(field && !field.disabled) field.value = values[key];
+    });
+  }
+  const draft = loadDraft();
+  if(draft && draft.values && Object.keys(draft.values).length){
+    const banner = document.createElement("div");
+    banner.className = "form-msg";
+    banner.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;grid-column:1/-1";
+    banner.innerHTML = `<span>Un brouillon non envoyé a été trouvé (${new Date(draft.savedAt).toLocaleString("fr-FR")}).</span>
+      <button type="button" class="btn btn-sm" id="restoreDraftBtn">Restaurer</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="discardDraftBtn">Ignorer</button>`;
+    form.querySelector(".form-grid").prepend(banner);
+    document.getElementById("restoreDraftBtn").onclick = ()=>{
+      if(progSel && !progSel.disabled && draft.values.programme) progSel.value = draft.values.programme;
+      renderTypeField(draft.values.type_intervention);
+      applyDraftValues(draft.values);
+      banner.remove();
+    };
+    document.getElementById("discardDraftBtn").onclick = ()=>{ clearDraft(); banner.remove(); };
+  }
+  let draftTimer = null;
+  form.addEventListener("input", ()=>{
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(()=> saveDraft(form), 600);
+  });
+  form.addEventListener("change", ()=> saveDraft(form));
+
+  const photoInput = document.getElementById("photoInput");
+  const photoPreview = document.getElementById("photoPreview");
+  photoInput.onchange = ()=>{
+    pendingFiles = Array.from(photoInput.files || []);
+    photoPreview.innerHTML = pendingFiles.map((f,i)=>
+      `<div class="photo-preview" style="background-image:url('${URL.createObjectURL(f)}')">
+        <button type="button" class="rm" data-i="${i}">${icon("x")}</button>
+      </div>`).join("");
+    photoPreview.querySelectorAll(".rm").forEach(btn=>{
+      btn.onclick = ()=>{
+        pendingFiles.splice(Number(btn.dataset.i), 1);
+        photoInput.value = "";
+        const dt = new DataTransfer();
+        pendingFiles.forEach(f=> dt.items.add(f));
+        photoInput.files = dt.files;
+        photoPreview.innerHTML = pendingFiles.map((f,i)=>
+          `<div class="photo-preview" style="background-image:url('${URL.createObjectURL(f)}')"><button type="button" class="rm" data-i="${i}">${icon("x")}</button></div>`).join("");
+      };
+    });
+  };
+
+  form.onsubmit = async (e)=>{
+    e.preventDefault();
+    const msg = document.getElementById("formMsg");
+    const submitBtn = document.getElementById("submitBtn");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Envoi en cours…";
+    msg.innerHTML = "";
+    try{
+      const fd = new FormData(form);
+      const typeVal = getTypeValue();
+      const record = {};
+      [...FORM_COMMON_NO_TYPE, {key:"type_intervention"}, ...typeGroupFields(currentProgramme(), typeVal)].forEach(f=>{
+        const raw = fd.get(f.key);
+        if(raw===null || raw==="") return;
+        record[f.key] = (f.type==="number") ? Number(raw) : raw;
+      });
+      if(!record.intitule || !record.programme || !record.type_intervention || !record.statut){
+        throw new Error("Merci de renseigner au moins l'intitulé, le programme, la catégorie/le type et le statut.");
+      }
+      // L'obligation de photo s'applique à toute intervention dont le type
+      // relève de la famille "Infrastructure" (chantiers), quel que soit son
+      // intitulé précis -- pas seulement à un type littéralement nommé ainsi.
+      const isInfra = flattenProgramTypes(record.programme).some(t=> t.label === record.type_intervention && t.group === "Infrastructure");
+      if(isInfra && record.statut === "Achevé" && pendingFiles.length === 0){
+        throw new Error("Une photo est obligatoire pour marquer une infrastructure comme « Achevé ».");
+      }
+      // Upload photos (if any) to the public "photos" bucket, then store their
+      // public URLs on the record.
+      const photos = [];
+      for(const file of pendingFiles){
+        const path = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+        const { error: upErr } = await supabaseClient.storage.from("photos").upload(path, file);
+        if(upErr) throw upErr;
+        const { data: pub } = supabaseClient.storage.from("photos").getPublicUrl(path);
+        photos.push({ url: pub.publicUrl, name: file.name });
+      }
+      if(photos.length) record.photos = photos;
+      record.source = "web";
+
+      const { error: insErr } = await supabaseClient.from("interventions").insert([record]);
+      if(insErr) throw insErr;
+
+      msg.innerHTML = `<div class="form-msg ok">Intervention ajoutée avec succès.</div>`;
+      form.reset();
+      pendingFiles = [];
+      photoPreview.innerHTML = "";
+      renderTypeField();
+      clearDraft();
+      loadRecent();
+    }catch(err){
+      msg.innerHTML = `<div class="form-msg err">Erreur : ${esc(err.message || String(err))}
+        ${/fetch|network|Failed to fetch/i.test(err.message||"") ? '<button type="button" class="btn btn-sm" id="retrySubmitBtn" style="margin-top:6px">Réessayer</button>' : ""}
+      </div>`;
+      const retryBtn = document.getElementById("retrySubmitBtn");
+      if(retryBtn) retryBtn.onclick = ()=> form.requestSubmit();
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Ajouter l'intervention";
+    }
+  };
+}
+
+async function loadRecent(){
+  const el = document.getElementById("recentList");
+  el.innerHTML = '<p style="color:var(--text-2);font-size:13px">Chargement…</p>';
+  const { data, error } = await supabaseClient
+    .from("interventions").select("intitule,programme,statut,created_at,ajoute_par")
+    .order("created_at", { ascending: false }).limit(10);
+  if(error){ el.innerHTML = `<div class="form-msg err">Impossible de charger la liste.</div>`; return; }
+  if(!data.length){ el.innerHTML = '<p style="color:var(--text-2);font-size:13px">Aucune intervention saisie pour l\'instant.</p>'; return; }
+  el.innerHTML = `<ul class="recent-list">${data.map(r=>`
+    <li><span>${esc(r.intitule||"(sans titre)")} <span style="color:var(--muted)">· ${esc(r.programme||"")}</span></span>
+    <span style="color:var(--muted)">${esc(r.ajoute_par||"")}</span></li>`).join("")}</ul>`;
+}
+
+if(supabaseClient){
+  supabaseClient.auth.onAuthStateChange((_event, _session)=>{ showForm(); });
+  showForm();
+  renderNavBadge();
+} else {
+  authPanel.innerHTML = "";
+}
+
+})();
+</script>
+</body>
+</html>

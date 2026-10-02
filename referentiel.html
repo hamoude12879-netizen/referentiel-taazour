@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Référentiel TAAZOUR — Détail opérationnel</title>
+<meta name="description" content="Référentiel détaillé des interventions TAAZOUR : tableau filtrable, carte et fiches par intervention.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="icon" type="image/jpeg" href="assets/taazour-logo.jpg">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="gov-band"><span>République Islamique de Mauritanie</span><span><span class="sep">&middot;</span>Délégation Générale TAAZOUR &mdash; Honneur &middot; Fraternité &middot; Justice</span></div>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark"><img src="assets/taazour-logo.jpg" alt="Logo TAAZOUR"></div>
+      <div>
+        <h1>Référentiel TAAZOUR</h1>
+        <p>Détail opérationnel &mdash; tous programmes</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+        <a href="index.html">Vue décideurs<span id="navUrgentBadge" class="nav-badge" hidden></span></a>
+        <a href="referentiel.html" class="on">Détail opérationnel</a>
+        <a href="saisie.html">Ajouter une intervention</a>
+      </nav>
+      <div class="auth-widget" id="authWidget"></div>
+      <button class="icon-btn" id="themeToggle"></button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="banner"></div>
+  <div class="stats" id="stats"></div>
+  <div class="charts">
+    <div class="panel"><h2>Répartition par programme</h2><p class="panel-sub">Part du nombre total d'interventions.</p><div id="chartProgramme"></div></div>
+    <div class="panel"><h2>Par type d'intervention</h2><p class="panel-sub">Nombre d'interventions par type.</p><div id="chartType"></div></div>
+    <div class="panel"><h2>Par statut</h2><p class="panel-sub">Avancement global du portefeuille.</p><div id="chartStatut"></div></div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <h2>Engagé vs décaissé par programme (MRU)</h2>
+      <p class="panel-sub">Rythme d'exécution financière par programme.</p>
+      <div id="chartFinance"></div>
+    </div>
+    <div class="panel">
+      <h2>Bénéficiaires ciblés vs atteints par programme</h2>
+      <p class="panel-sub">Taux de couverture réel par rapport aux objectifs fixés.</p>
+      <div id="chartBeneficiaires"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="filters">
+      <input type="search" id="fSearch" placeholder="Rechercher un intitulé, un partenaire…">
+      <select id="fProgramme"></select>
+      <select id="fType"></select>
+      <select id="fRegion"></select>
+      <select id="fStatut"></select>
+      <div class="view-toggle">
+        <button id="vTable" class="on"></button>
+        <button id="vMap"></button>
+      </div>
+      <button class="btn btn-ghost" id="exportBtn"></button>
+    </div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<footer class="site">Référentiel TAAZOUR — mis à jour à partir du classeur Excel « Base_Referentiel_TAAZOUR ».</footer>
+
+<script src="config.js"></script>
+<script src="data.js"></script>
+<script src="common.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(async function(){
+"use strict";
+
+let filters={search:"",programme:"",type:"",region:"",statut:""};
+let view="table";
+
+function populateSelect(sel, items, allLabel){
+  sel.innerHTML = '<option value="">'+allLabel+'</option>' + items.map(i=>{
+    const k = typeof i==="string" ? i : i.k;
+    return `<option value="${esc(k)}">${esc(k)}</option>`;
+  }).join("");
+}
+
+function filtered(){
+  const s = filters.search.trim().toLowerCase();
+  return RECORDS.filter(r=>{
+    if(filters.programme && r.programme!==filters.programme) return false;
+    if(filters.type && r.type_intervention!==filters.type) return false;
+    if(filters.region && r.region!==filters.region) return false;
+    if(filters.statut && effectiveStatut(r)!==filters.statut) return false;
+    if(s){
+      const hay = [r.intitule,r.partenaire,r.region,r.moughataa,r.marche_numero].join(" ").toLowerCase();
+      if(!hay.includes(s)) return false;
+    }
+    return true;
+  });
+}
+
+function renderStats(){
+  const total = RECORDS.length;
+  const montant = RECORDS.reduce((a,r)=> a + (Number(r.montant_engage)||0), 0);
+  const decaisse = RECORDS.reduce((a,r)=> a + (Number(r.montant_decaisse)||0), 0);
+  const atteints = RECORDS.reduce((a,r)=> a + (Number(r.beneficiaires_atteints)||0), 0);
+  const done = RECORDS.filter(r=> r.statut==="Achevé" || r.statut==="Clôturé").length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  const tauxDecaissement = montant ? Math.round(decaisse/montant*100) : 0;
+  const regions = new Set(RECORDS.map(r=>r.region).filter(Boolean)).size;
+  const avancementVals = RECORDS.map(r=>Number(r.avancement_pct)).filter(v=>!isNaN(v));
+  const avancementMoyen = avancementVals.length ? Math.round(avancementVals.reduce((a,v)=>a+v,0)/avancementVals.length) : null;
+  renderStatTiles(document.getElementById("stats"), [
+    {label:"Interventions", value:fmtNum(total), sub:"tous programmes", icon:"list"},
+    {label:"Bénéficiaires atteints", value: total? fmtNum(atteints):"—", sub:"cumul des interventions", icon:"users"},
+    {label:"Montant engagé", value: total? fmtNum(montant):"—", sub:"MRU", icon:"coin"},
+    {label:"Montant décaissé", value: total? fmtNum(decaisse):"—", sub: montant? tauxDecaissement+"% de l'engagé":"MRU", icon:"coin"},
+    {label:"Taux d'achèvement", value: total? pct+"%":"—", sub:fmtNum(done)+" achevées / clôturées", icon:"checkCircle"},
+    {label:"Avancement moyen", value: avancementMoyen!=null? avancementMoyen+"%":"—", sub:"toutes interventions renseignées", icon:"checkCircle"},
+    {label:"Régions couvertes", value:fmtNum(regions), sub:"sur 15 wilayas", icon:"map"},
+  ]);
+}
+
+function renderCharts(){
+  const byProg = PROGRAMMES.map(p=>({label:p.k, color:p.c, count: RECORDS.filter(r=>r.programme===p.k).length})).filter(x=>x.count>0);
+  donutChart(document.getElementById("chartProgramme"), byProg);
+  const byType = distinctTypes(RECORDS).map(t=>({label:t, color:"var(--accent)", count: RECORDS.filter(r=>r.type_intervention===t).length}));
+  barChart(document.getElementById("chartType"), byType);
+  const byStat = STATUTS.map(s=>({label:s.k, color:s.c, count: RECORDS.filter(r=>effectiveStatut(r)===s.k).length})).filter(x=>x.count>0);
+  barChart(document.getElementById("chartStatut"), byStat);
+
+  const byFinance = PROGRAMMES.map(p=>{
+    const rows = RECORDS.filter(r=>r.programme===p.k);
+    return {
+      label: p.k,
+      a: Math.round(rows.reduce((a,r)=>a+(Number(r.montant_engage)||0),0)),
+      b: Math.round(rows.reduce((a,r)=>a+(Number(r.montant_decaisse)||0),0)),
+    };
+  }).filter(x=>x.a>0 || x.b>0);
+  comparisonBarChart(document.getElementById("chartFinance"), byFinance, {
+    aLabel:"Engagé", bLabel:"Décaissé", aColor:"var(--accent)", bColor:"var(--cat4)",
+    fmt: (n)=> fmtNum(n),
+  });
+
+  const byBenef = PROGRAMMES.map(p=>{
+    const rows = RECORDS.filter(r=>r.programme===p.k);
+    return {
+      label: p.k,
+      a: Math.round(rows.reduce((a,r)=>a+(Number(r.beneficiaires_cibles)||0),0)),
+      b: Math.round(rows.reduce((a,r)=>a+(Number(r.beneficiaires_atteints)||0),0)),
+    };
+  }).filter(x=>x.a>0 || x.b>0);
+  comparisonBarChart(document.getElementById("chartBeneficiaires"), byBenef, {
+    aLabel:"Ciblés", bLabel:"Atteints", aColor:"var(--muted)", bColor:"var(--good)",
+    fmt: (n)=> fmtNum(n),
+  });
+}
+
+function renderContent(){
+  const rows = filtered();
+  const el = document.getElementById("content");
+  if(!RECORDS.length){
+    el.innerHTML = `<div class="empty-state"><div class="big">${icon("folder")}</div><h3>La base est vide pour l'instant</h3><p>Les premières interventions seront ajoutées via le classeur Excel partagé par l'équipe TAAZOUR.</p></div>`;
+    return;
+  }
+  if(!rows.length){
+    el.innerHTML = `<div class="empty-state"><div class="big">${icon("search")}</div><h3>Aucun résultat</h3><p>Essayez d'élargir vos filtres ou votre recherche.</p></div>`;
+    return;
+  }
+  if(view==="table"){
+    el.innerHTML = `<div class="tbl-wrap"><table>
+      <thead><tr><th>Intervention</th><th>Programme</th><th>Statut</th><th>Localisation</th><th class="num">Avancement</th><th class="num">Bénéf. atteints</th><th class="num">Montant engagé</th><th class="num">Montant décaissé</th></tr></thead>
+      <tbody>${rows.map(r=>`
+        <tr data-id="${esc(r.id)}">
+          <td><div class="row-title">${esc(r.intitule||"(sans titre)")}</div><div class="row-sub">${esc(r.type_intervention||"")}</div></td>
+          <td>${esc(r.programme||"—")}</td>
+          <td>${statusChip(effectiveStatut(r))}</td>
+          <td>${esc(r.region||"—")}${r.moughataa? " · "+esc(r.moughataa):""}</td>
+          <td class="num">${r.avancement_pct!=null? `<div class="mini-progress"><div class="mini-progress-track"><div class="mini-progress-fill" style="width:${Math.max(0,Math.min(100,Number(r.avancement_pct)))}%"></div></div><span>${Math.round(r.avancement_pct)}%</span></div>` : "—"}</td>
+          <td class="num">${r.beneficiaires_atteints!=null? fmtNum(r.beneficiaires_atteints):"—"}</td>
+          <td class="num">${fmtMRU(r.montant_engage)}</td>
+          <td class="num">${fmtMRU(r.montant_decaisse)}</td>
+        </tr>
+      `).join("")}</tbody>
+    </table></div>`;
+    el.querySelectorAll("tbody tr").forEach(tr=>{ tr.onclick = ()=> openDetail(tr.dataset.id); });
+  } else {
+    renderMap(el, rows);
+  }
+}
+
+function renderMap(el, rows){
+  el.innerHTML = `<div id="leafletMap" class="geo-map"></div>
+    <div class="geo-note">Seules les interventions avec latitude/longitude renseignées apparaissent sur la carte (principalement les infrastructures).</div>
+    <div class="legend">${STATUTS.map(s=>`<span><i style="background:${s.c}"></i>${esc(s.k)}</span>`).join("")}</div>`;
+  const count = renderGeoMap("leafletMap", rows);
+  if(count === 0){
+    el.querySelector(".geo-note").insertAdjacentHTML("beforebegin",
+      `<div class="empty-state"><div class="big">${icon("mapPin")}</div><h3>Aucune coordonnée GPS pour ces filtres</h3></div>`);
+  }
+}
+
+// Exporte les lignes actuellement filtrées vers un classeur Excel (.xlsx),
+// avec des en-têtes lisibles (dérivés des libellés du formulaire) plutôt que
+// les noms techniques des colonnes en base.
+function exportToExcel(){
+  const rows = filtered();
+  if(!rows.length){ return; }
+  const allFields = [...FORM_COMMON, ...Object.values(FORM_GROUPS_BY_TYPE).flat()];
+  const seenKeys = new Set();
+  const cols = [];
+  allFields.forEach(f=>{ if(!seenKeys.has(f.key)){ seenKeys.add(f.key); cols.push(f.key); } });
+  ["ajoute_par","modifie_par"].forEach(k=>{ if(!seenKeys.has(k)){ seenKeys.add(k); cols.push(k); } });
+  const headers = cols.map(k=> FIELD_LABELS[k] || k);
+  const data = rows.map(r=> cols.map(k=> r[k]!=null ? r[k] : ""));
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Interventions");
+  const today = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Referentiel_TAAZOUR_export_${today}.xlsx`);
+}
+
+function wireFilters(){
+  document.getElementById("vTable").innerHTML = icon("table")+"Tableau";
+  document.getElementById("vMap").innerHTML = icon("map")+"Carte";
+  const exportBtn = document.getElementById("exportBtn");
+  exportBtn.innerHTML = icon("download")+"Exporter";
+  exportBtn.onclick = ()=>{
+    if(typeof XLSX === "undefined"){
+      exportBtn.insertAdjacentHTML("afterend", '<span style="font-size:12px;color:var(--critical);margin-left:8px">Export indisponible hors-ligne.</span>');
+      setTimeout(()=> exportBtn.parentElement.querySelectorAll("span").forEach(s=>s.remove()), 3000);
+      return;
+    }
+    exportToExcel();
+  };
+  populateSelect(document.getElementById("fProgramme"), PROGRAMMES, "Tous les programmes");
+  populateSelect(document.getElementById("fType"), distinctTypes(RECORDS), "Tous les types");
+  populateSelect(document.getElementById("fRegion"), REGIONS, "Toutes les régions");
+  populateSelect(document.getElementById("fStatut"), STATUTS, "Tous les statuts");
+  document.getElementById("fSearch").oninput = (e)=>{ filters.search = e.target.value; renderContent(); };
+  document.getElementById("fProgramme").onchange = (e)=>{ filters.programme = e.target.value; renderContent(); };
+  document.getElementById("fType").onchange = (e)=>{ filters.type = e.target.value; renderContent(); };
+  document.getElementById("fRegion").onchange = (e)=>{ filters.region = e.target.value; renderContent(); };
+  document.getElementById("fStatut").onchange = (e)=>{ filters.statut = e.target.value; renderContent(); };
+  document.getElementById("vTable").onclick = ()=>{ view="table"; document.getElementById("vTable").classList.add("on"); document.getElementById("vMap").classList.remove("on"); renderContent(); };
+  document.getElementById("vMap").onclick = ()=>{ view="map"; document.getElementById("vMap").classList.add("on"); document.getElementById("vTable").classList.remove("on"); renderContent(); };
+}
+
+window.addEventListener("scroll", ()=>{
+  document.querySelector(".topbar").classList.toggle("scrolled", window.scrollY > 8);
+}, {passive:true});
+
+await initRecords();
+onInterventionDeleted = ()=> location.reload();
+initThemeToggle("themeToggle");
+await initAuth(()=> renderAuthWidget(document.getElementById("authWidget")));
+renderAuthWidget(document.getElementById("authWidget"));
+renderNavBadge();
+wireFilters();
+renderBanner(document.getElementById("banner"));
+renderStats();
+renderCharts();
+renderContent();
+
+})();
+</script>
+</body>
+</html>
